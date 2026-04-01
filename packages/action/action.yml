@@ -1,0 +1,12 @@
+name: 'ImageMainichi Crawl'
+description: 'Execute rules in manifest.json to crawl images and update the data source repo'
+inputs:
+  max-images:
+    description: 'Maximum number of images to download per rule execution'
+    default: '10'
+  keep-max:
+    description: 'Maximum total images to keep in the repo (FIFO eviction)'
+    default: '200'
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

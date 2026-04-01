@@ -1,0 +1,14 @@
+{
+  "name": "image-mainichi",
+  "private": true,
+  "description": "Random image service with configurable data sources",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @image-mainichi/worker dev",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
