@@ -1,7 +1,7 @@
 import type { Manifest, Rule } from './types.js'
 
-const VALID_RULE_TYPES = ['json-api', 'css-selector', 'rss'] as const
-const VALID_MODES = ['scheduled', 'dynamic', 'both'] as const
+const VALID_RULE_TYPES = ['json-api', 'css-selector', 'rss', 'manhuagui'] as const
+const VALID_MODES = ['crawl', 'on-demand'] as const
 
 export function parseManifest(raw: unknown): Manifest {
   if (!raw || typeof raw !== 'object') {
@@ -13,9 +13,11 @@ export function parseManifest(raw: unknown): Manifest {
   if (typeof obj.name !== 'string' || !obj.name) {
     throw new Error('Manifest "name" is required and must be a string')
   }
+  if (typeof obj.rules !== 'undefined') {
+    throw new Error('Manifest must not include "rules"; define rules in rules/*.json instead')
+  }
 
   const images = Array.isArray(obj.images) ? obj.images : []
-  const rules = Array.isArray(obj.rules) ? obj.rules : []
 
   // Validate images
   for (const img of images) {
@@ -24,17 +26,16 @@ export function parseManifest(raw: unknown): Manifest {
     }
   }
 
-  // Validate rules
-  for (const rule of rules) {
-    validateRule(rule)
-  }
-
   return {
     name: obj.name,
     description: typeof obj.description === 'string' ? obj.description : undefined,
     images,
-    rules,
   }
+}
+
+export function parseRule(raw: unknown): Rule {
+  validateRule(raw)
+  return raw
 }
 
 function validateRule(rule: unknown): asserts rule is Rule {
@@ -56,6 +57,13 @@ function validateRule(rule: unknown): asserts rule is Rule {
   if (typeof r.url !== 'string') {
     throw new Error(`Rule "${r.name}" must have a "url" string`)
   }
+  if (r.mode === 'crawl') {
+    if (typeof r.schedule !== 'string' || !r.schedule) {
+      throw new Error(`crawl rule "${r.name}" requires "schedule"`)
+    }
+  } else if (typeof r.schedule !== 'undefined') {
+    throw new Error(`on-demand rule "${r.name}" must not include "schedule"`)
+  }
 
   switch (r.type) {
     case 'json-api':
@@ -71,6 +79,11 @@ function validateRule(rule: unknown): asserts rule is Rule {
     case 'rss':
       if (!['enclosure', 'media:content', 'content-img'].includes(r.imageFrom as string)) {
         throw new Error(`rss rule "${r.name}" requires valid "imageFrom"`)
+      }
+      break
+    case 'manhuagui':
+      if (!['latest-chapter', 'all-chapters'].includes(r.scope as string)) {
+        throw new Error(`manhuagui rule "${r.name}" requires valid "scope"`)
       }
       break
   }

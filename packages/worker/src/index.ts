@@ -35,16 +35,16 @@ async function handleRandom(
     return jsonResponse({ error: 'No sources configured' }, 500)
   }
 
-  const { manifests, errors } = await loadAllSources(sources)
+  const { sources: loadedSources, errors } = await loadAllSources(sources)
 
-  if (manifests.length === 0) {
+  if (loadedSources.length === 0) {
     return jsonResponse({ error: 'All sources failed', details: errors }, 502)
   }
 
   const tag = url.searchParams.get('tag') ?? undefined
-  const image = await pickRandomImage(manifests, {
+  const image = await pickRandomImage(loadedSources, {
     tag,
-    enableDynamic: true,
+    enableOnDemand: true,
     kvCache: env.CACHE,
   })
 

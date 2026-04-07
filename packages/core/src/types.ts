@@ -7,8 +7,6 @@ export interface Manifest {
   description?: string
   /** 静态图片列表（由 Actions 爬取后自动维护，或手动添加） */
   images: ImageEntry[]
-  /** 规则列表 */
-  rules: Rule[]
 }
 
 export interface ImageEntry {
@@ -22,17 +20,16 @@ export interface ImageEntry {
 // Rules — 规则定义
 // ============================================================
 
-export type Rule = JsonApiRule | CssSelectorRule | RssRule
+export type Rule = JsonApiRule | CssSelectorRule | RssRule | ManhuaguiRule
 
 export interface RuleBase {
   name: string
   /**
-   * scheduled = 仅 GitHub Actions 定时执行
-   * dynamic  = 仅 Worker 实时执行
-   * both     = 两者皆可
+   * crawl     = 仅 GitHub Actions 定时执行
+   * on-demand = 仅 Worker 请求时执行
    */
-  mode: 'scheduled' | 'dynamic' | 'both'
-  /** cron 表达式，仅 scheduled / both 模式有意义 */
+  mode: 'crawl' | 'on-demand'
+  /** cron 表达式，仅 crawl 模式有意义 */
   schedule?: string
 }
 
@@ -59,6 +56,14 @@ export interface RssRule extends RuleBase {
   url: string
   /** 从 RSS item 中提取图片的方式 */
   imageFrom: 'enclosure' | 'media:content' | 'content-img'
+}
+
+export interface ManhuaguiRule extends RuleBase {
+  type: 'manhuagui'
+  /** 看漫画作品页 URL，例如 https://m.manhuagui.com/comic/58997/ */
+  url: string
+  /** latest-chapter = 最新章节全部页；all-chapters = 所有章节全部页 */
+  scope: 'latest-chapter' | 'all-chapters'
 }
 
 // ============================================================

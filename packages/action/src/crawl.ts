@@ -1,7 +1,7 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join, extname } from 'node:path'
-import { parseManifest, executeRule, type Manifest, type ImageEntry } from '@image-mainichi/core'
+import { parseManifest, parseRule, executeRule, type Manifest, type ImageEntry, type Rule } from '@image-mainichi/core'
 
 export interface CrawlOptions {
   maxImages: number
@@ -10,27 +10,26 @@ export interface CrawlOptions {
 }
 
 /**
- * 执行爬取：读取 manifest → 执行 scheduled 规则 → 下载图片 → 更新 manifest
+ * 执行爬取：读取 manifest → 执行 crawl 规则 → 下载图片 → 更新 manifest
  */
 export async function crawl(options: CrawlOptions): Promise<{ added: number; removed: number }> {
   const manifestPath = join(options.workDir, 'manifest.json')
+  const rulesDir = join(options.workDir, 'rules')
   const imagesDir = join(options.workDir, 'images')
 
   if (!existsSync(imagesDir)) {
     mkdirSync(imagesDir, { recursive: true })
   }
 
-  // 读取 manifest
+  // 读取公开 manifest
   const raw = JSON.parse(readFileSync(manifestPath, 'utf-8'))
   const manifest = parseManifest(raw)
 
-  // 收集所有 scheduled / both 规则
-  const rules = manifest.rules.filter(
-    (r) => r.mode === 'scheduled' || r.mode === 'both'
-  )
+  // 读取私有规则目录
+  const rules = loadRules(rulesDir).filter((rule) => rule.mode === 'crawl')
 
   if (rules.length === 0) {
-    console.log('No scheduled rules found, skipping.')
+    console.log('No crawl rules found, skipping.')
     return { added: 0, removed: 0 }
   }
 
@@ -87,6 +86,21 @@ export async function crawl(options: CrawlOptions): Promise<{ added: number; rem
 
   console.log(`Done: +${added} images, -${removed} evicted`)
   return { added, removed }
+}
+
+export function loadRules(rulesDir: string): Rule[] {
+  if (!existsSync(rulesDir)) {
+    return []
+  }
+
+  return readdirSync(rulesDir)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => {
+      const path = join(rulesDir, name)
+      const raw = JSON.parse(readFileSync(path, 'utf-8'))
+      return parseRule(raw)
+    })
 }
 
 async function downloadImage(url: string, imagesDir: string): Promise<ImageEntry | null> {

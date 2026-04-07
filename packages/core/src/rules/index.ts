@@ -2,6 +2,7 @@ import type { Rule, Fetcher } from '../types.js'
 import { executeJsonApiRule } from './json-api.js'
 import { executeCssSelectorRule } from './css.js'
 import { executeRssRule } from './rss.js'
+import { executeManhuaguiRule } from './manhuagui.js'
 
 /**
  * 规则引擎入口 — 根据规则类型分发到对应处理器
@@ -17,6 +18,8 @@ export async function executeRule(rule: Rule, fetch: Fetcher): Promise<string[]>
       return executeCssSelectorRule(rule, fetch)
     case 'rss':
       return executeRssRule(rule, fetch)
+    case 'manhuagui':
+      return executeManhuaguiRule(rule, fetch)
     default:
       throw new Error(`Unknown rule type: ${(rule as Rule).type}`)
   }

@@ -7,7 +7,7 @@ compatibility_date = "2024-12-01"
 # 格式: [{"repo":"owner/repo"}, {"repo":"owner/repo@branch","rawBaseUrl":"https://mirror.example.com"}]
 SOURCES = '[]'
 
-# 可选：绑定 KV namespace 用于缓存动态规则结果
+# 可选：绑定 KV namespace（当前默认静态模式下无需使用）
 # [[kv_namespaces]]
 # binding = "CACHE"
 # id = "your-kv-namespace-id"

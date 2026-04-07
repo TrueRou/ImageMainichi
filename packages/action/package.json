@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test-rule": "node dist/test-rule.js"
   },
   "dependencies": {
     "@actions/core": "^1.11.0",

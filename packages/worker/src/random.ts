@@ -1,4 +1,4 @@
-import type { SourceConfig, Manifest, ImageEntry } from '@image-mainichi/core'
+import type { SourceConfig, Manifest, Rule } from '@image-mainichi/core'
 import { executeRule } from '@image-mainichi/core'
 import { resolveImageUrl } from './source-loader.js'
 
@@ -12,13 +12,13 @@ export interface ResolvedImage {
  * 从所有数据源中收集候选图片，然后随机选取一张
  */
 export async function pickRandomImage(
-  manifests: { source: SourceConfig; manifest: Manifest }[],
-  options: { tag?: string; enableDynamic?: boolean; kvCache?: KVNamespace } = {}
+  sources: { source: SourceConfig; manifest: Manifest; rules: Rule[] }[],
+  options: { tag?: string; enableOnDemand?: boolean; kvCache?: KVNamespace } = {}
 ): Promise<ResolvedImage | null> {
   const pool: ResolvedImage[] = []
 
-  for (const { source, manifest } of manifests) {
-    // 1. 收集静态图片
+  for (const { source, manifest, rules } of sources) {
+    // 收集静态图片
     for (const img of manifest.images) {
       pool.push({
         url: resolveImageUrl(img, source),
@@ -27,20 +27,17 @@ export async function pickRandomImage(
       })
     }
 
-    // 2. 如果启用动态模式，执行 dynamic/both 规则
-    if (options.enableDynamic) {
-      const dynamicRules = manifest.rules.filter(
-        (r) => r.mode === 'dynamic' || r.mode === 'both'
-      )
+    if (options.enableOnDemand) {
+      const onDemandRules = rules.filter((rule) => rule.mode === 'on-demand')
 
-      for (const rule of dynamicRules) {
+      for (const rule of onDemandRules) {
         try {
-          const urls = await executeDynamicRule(rule, manifest.name, options.kvCache)
+          const urls = await executeOnDemandRule(rule, manifest.name, options.kvCache)
           for (const url of urls) {
             pool.push({ url, sourceName: manifest.name })
           }
         } catch (e) {
-          console.error(`Dynamic rule "${rule.name}" failed:`, e)
+          console.error(`on-demand rule "${rule.name}" failed:`, e)
         }
       }
     }
@@ -59,14 +56,13 @@ export async function pickRandomImage(
 
 const KV_CACHE_TTL = 600 // 10 minutes
 
-async function executeDynamicRule(
-  rule: Parameters<typeof executeRule>[0],
+async function executeOnDemandRule(
+  rule: Rule,
   sourceName: string,
   kvCache?: KVNamespace
 ): Promise<string[]> {
   const cacheKey = `rule:${sourceName}:${rule.name}`
 
-  // 尝试从 KV 读取缓存
   if (kvCache) {
     const cached = await kvCache.get(cacheKey)
     if (cached) {
@@ -76,7 +72,6 @@ async function executeDynamicRule(
 
   const urls = await executeRule(rule, fetch)
 
-  // 写入 KV 缓存
   if (kvCache && urls.length > 0) {
     await kvCache.put(cacheKey, JSON.stringify(urls), { expirationTtl: KV_CACHE_TTL })
   }

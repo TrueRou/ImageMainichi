@@ -1,12 +1,24 @@
-import type { SourceConfig, Manifest, ImageEntry } from '@image-mainichi/core'
-import { parseManifest } from '@image-mainichi/core'
+import type { SourceConfig, Manifest, ImageEntry, Rule } from '@image-mainichi/core'
+import { parseManifest, parseRule } from '@image-mainichi/core'
 
 const MANIFEST_CACHE_TTL = 300 // 5 minutes
 
+export interface LoadedSource {
+  source: SourceConfig
+  manifest: Manifest
+  rules: Rule[]
+}
+
 /**
- * 从 GitHub raw URL 加载数据源的 manifest.json
+ * 从 GitHub raw URL 加载数据源的 manifest.json 和 rules/*.json
  */
-export async function loadManifest(source: SourceConfig): Promise<Manifest> {
+export async function loadSource(source: SourceConfig): Promise<LoadedSource> {
+  const manifest = await loadManifest(source)
+  const rules = await loadRules(source)
+  return { source, manifest, rules }
+}
+
+async function loadManifest(source: SourceConfig): Promise<Manifest> {
   const url = getManifestUrl(source)
 
   // 尝试使用 Cache API
@@ -33,33 +45,68 @@ export async function loadManifest(source: SourceConfig): Promise<Manifest> {
   return parseManifest(json)
 }
 
+async function loadRules(source: SourceConfig): Promise<Rule[]> {
+  if (source.rawBaseUrl) {
+    return []
+  }
+
+  const { repo, branch } = parseRepo(source.repo)
+  const url = `https://api.github.com/repos/${repo}/contents/rules?ref=${branch}`
+  const res = await fetch(url, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'ImageMainichi',
+    },
+  })
+
+  if (res.status === 404) {
+    return []
+  }
+  if (!res.ok) {
+    throw new Error(`Failed to load rules from ${url}: HTTP ${res.status}`)
+  }
+
+  const entries = await res.json() as Array<{ type?: string; download_url?: string; name?: string }>
+  const rules: Rule[] = []
+
+  for (const entry of entries) {
+    if (entry.type !== 'file' || !entry.name?.endsWith('.json') || !entry.download_url) {
+      continue
+    }
+
+    const ruleRes = await fetch(entry.download_url)
+    if (!ruleRes.ok) {
+      throw new Error(`Failed to load rule file ${entry.download_url}: HTTP ${ruleRes.status}`)
+    }
+
+    rules.push(parseRule(await ruleRes.json()))
+  }
+
+  return rules
+}
+
 /**
  * 加载所有数据源，收集静态图片列表
  */
 export async function loadAllSources(sources: SourceConfig[]): Promise<{
-  manifests: { source: SourceConfig; manifest: Manifest }[]
+  sources: LoadedSource[]
   errors: { source: SourceConfig; error: string }[]
 }> {
-  const results = await Promise.allSettled(
-    sources.map(async (source) => ({
-      source,
-      manifest: await loadManifest(source),
-    }))
-  )
+  const results = await Promise.allSettled(sources.map((source) => loadSource(source)))
 
-  const manifests: { source: SourceConfig; manifest: Manifest }[] = []
+  const loadedSources: LoadedSource[] = []
   const errors: { source: SourceConfig; error: string }[] = []
 
   for (let i = 0; i < results.length; i++) {
     const result = results[i]
     if (result.status === 'fulfilled') {
-      manifests.push(result.value)
+      loadedSources.push(result.value)
     } else {
       errors.push({ source: sources[i], error: String(result.reason) })
     }
   }
 
-  return { manifests, errors }
+  return { sources: loadedSources, errors }
 }
 
 /**
@@ -82,6 +129,11 @@ function getRawBaseUrl(source: SourceConfig): string {
   if (source.rawBaseUrl) {
     return source.rawBaseUrl.replace(/\/$/, '')
   }
-  const [repo, branch = 'main'] = source.repo.split('@')
+  const { repo, branch } = parseRepo(source.repo)
   return `https://raw.githubusercontent.com/${repo}/${branch}`
+}
+
+function parseRepo(raw: string): { repo: string; branch: string } {
+  const [repo, branch = 'main'] = raw.split('@')
+  return { repo, branch }
 }

@@ -1,7 +1,7 @@
 {
   "name": "example-rss",
   "type": "rss",
-  "mode": "scheduled",
+  "mode": "crawl",
   "schedule": "0 8 * * *",
   "url": "https://example.com/feed.xml",
   "imageFrom": "enclosure"

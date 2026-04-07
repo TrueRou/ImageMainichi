@@ -23,31 +23,34 @@ Build order matters: `core` must build before `worker` and `action` (they depend
 
 ## Architecture
 
-This is a pnpm monorepo for a random image API service. Users create separate GitHub repos as "data sources" (using `template/`), each containing a `manifest.json` with image lists and crawling rules.
+This is a pnpm monorepo for a random image API service. Users create separate GitHub repos as "data sources" (using `template/`), where `manifest.json` and `images/` are public outputs, while crawl rules live separately under `rules/`.
 
 ### Packages
 
-- **`packages/core`** — Isomorphic library (works in Workers and Node.js). Exports types, manifest parser (`parseManifest`), and rule engine (`executeRule`). The rule engine uses a `Fetcher` injection pattern so it doesn't depend on any specific runtime's `fetch`.
+- **`packages/core`** — Isomorphic library (works in Workers and Node.js). Exports types, public manifest parser (`parseManifest`), rule parser (`parseRule`), and rule engine (`executeRule`). The rule engine uses a `Fetcher` injection pattern so it doesn't depend on any specific runtime's `fetch`.
 
-- **`packages/worker`** — Cloudflare Workers API. Routes: `GET /` (302 redirect to random image), `GET /json` (image metadata), `GET /health`. Configured via `SOURCES` env var (JSON array of `SourceConfig`). Loads manifests from GitHub raw URLs, supports both static images and dynamic rule execution. Uses Cache API for manifests, optional KV for dynamic rule results.
+- **`packages/worker`** — Cloudflare Workers API. Routes: `GET /` (302 redirect to random image), `GET /json` (image metadata), `GET /health`. Configured via `SOURCES` env var (JSON array of `SourceConfig`). Loads public manifests from GitHub raw URLs and serves static images from them.
 
-- **`packages/action`** — GitHub Action that runs in data source repos. Reads `manifest.json`, executes `scheduled`/`both` mode rules, downloads images to `images/`, updates manifest, with FIFO eviction.
+- **`packages/action`** — GitHub Action that runs in data source repos. Reads public `manifest.json`, loads crawl rules from `rules/*.json`, downloads images to `images/`, updates the public manifest, with FIFO eviction.
 
-- **`template/`** — Scaffold for data source repos. Contains example manifest, rules, and a GitHub Actions workflow.
+- **`template/`** — Scaffold for data source repos. Contains public manifest, private rules examples, and a GitHub Actions workflow.
 
 ### Rule Engine
 
-Three rule types in `packages/core/src/rules/`:
+Supported rule types in `packages/core/src/rules/`:
 - `json-api` — Fetches JSON API, extracts image URLs via simple JSONPath (`$.data[*].url`)
 - `css-selector` — Fetches HTML, extracts via CSS selector + attribute (uses `node-html-parser`)
 - `rss` — Parses RSS/Atom feeds via regex (no XML parser dependency)
+- `manhuagui` — Fetches comic pages from 看漫画 and expands them into image page URLs
 
-Each rule has a `mode`: `scheduled` (Actions only), `dynamic` (Worker only), or `both`.
+Each rule has a `mode`. Current default flow only consumes `crawl` rules from `rules/*.json`; `on-demand` is reserved for future extension.
 
-### Static vs Dynamic
+### Public outputs vs private rules
 
-- **Static**: GitHub Actions cron runs rules → downloads images into the data source repo → Worker serves from the static `images` list in manifest
-- **Dynamic**: Worker executes `dynamic`/`both` rules at request time, caches results in KV
+- **Public**: `manifest.json`, `images/`
+- **Private**: `rules/*.json`
+- **Crawl**: GitHub Actions reads private rules and writes public results
+- **Worker**: consumes only public manifest/images in the current implementation
 
 ## Key Types
 

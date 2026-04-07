@@ -1,15 +1,5 @@
 {
   "name": "my-image-source",
   "description": "My image data source for ImageMainichi",
-  "images": [],
-  "rules": [
-    {
-      "name": "example-api",
-      "type": "json-api",
-      "mode": "both",
-      "schedule": "0 0 * * *",
-      "url": "https://api.example.com/images",
-      "imagePath": "$.data[*].url"
-    }
-  ]
+  "images": []
 }
