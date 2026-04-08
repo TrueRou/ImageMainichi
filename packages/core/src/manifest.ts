@@ -57,13 +57,6 @@ function validateRule(rule: unknown): asserts rule is Rule {
   if (typeof r.url !== 'string') {
     throw new Error(`Rule "${r.name}" must have a "url" string`)
   }
-  if (r.mode === 'crawl') {
-    if (typeof r.schedule !== 'string' || !r.schedule) {
-      throw new Error(`crawl rule "${r.name}" requires "schedule"`)
-    }
-  } else if (typeof r.schedule !== 'undefined') {
-    throw new Error(`on-demand rule "${r.name}" must not include "schedule"`)
-  }
 
   switch (r.type) {
     case 'json-api':

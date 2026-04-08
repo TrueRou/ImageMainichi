@@ -29,8 +29,6 @@ export interface RuleBase {
    * on-demand = 仅 Worker 请求时执行
    */
   mode: 'crawl' | 'on-demand'
-  /** cron 表达式，仅 crawl 模式有意义 */
-  schedule?: string
 }
 
 export interface JsonApiRule extends RuleBase {
