@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 }
 
 function runInit(args: string[]): void {
-  let dir = 'image-mainichi-source'
+  let dir = '.'
   let name: string | undefined
 
   for (let i = 0; i < args.length; i++) {
@@ -52,7 +52,6 @@ function runInit(args: string[]): void {
   const targetDir = initTemplate({ targetDir: dir, name })
   console.log(`Created source at ${targetDir}`)
   console.log('Next steps:')
-  console.log(`- cd ${targetDir}`)
   console.log('- edit rules/*.json')
   console.log('- run image-mainichi rule list')
   console.log('- run image-mainichi rule test <selector>')

@@ -1,8 +1,7 @@
 {
-  "name": "example-rss",
-  "type": "rss",
+  "name": "ongeki",
+  "type": "manhuagui",
   "mode": "crawl",
-  "schedule": "0 8 * * *",
-  "url": "https://example.com/feed.xml",
-  "imageFrom": "enclosure"
+  "url": "https://m.manhuagui.com/comic/58997/",
+  "scope": "latest-chapter"
 }

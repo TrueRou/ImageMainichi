@@ -1,5 +1,5 @@
 {
-  "name": "my-image-source",
-  "description": "My image data source for ImageMainichi",
+  "name": "ongeki-source",
+  "description": "Ongeki manga source for ImageMainichi",
   "images": []
 }
