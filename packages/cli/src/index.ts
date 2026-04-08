@@ -99,7 +99,7 @@ async function runRuleTest(args: string[]): Promise<void> {
       downloadHeaders: result.downloadHeaders,
       onError: (i, total, url, e) => console.error(`  [${i + 1}/${total}] ${e instanceof Error ? e.message : String(e)} <- ${url}`),
     })
-    console.log(`Done: +${dlResult.added} added, -${dlResult.removed} evicted`)
+    console.log(`Done: +${dlResult.added} added`)
   }
 }
 

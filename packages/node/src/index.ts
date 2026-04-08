@@ -5,8 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { executeRule, parseManifest, parseRule, type Manifest, type ImageEntry, type Rule, type RuleResult } from '@image-mainichi/core'
 
 export interface CrawlOptions {
-  maxImages: number
-  keepMax: number
   workDir: string
 }
 
@@ -48,15 +46,12 @@ export interface DownloadOptions {
   workDir: string
   imageUrls: string[]
   downloadHeaders?: Record<string, string>
-  maxImages?: number
-  keepMax?: number
   onProgress?: (index: number, total: number, filename: string, size: number) => void
   onError?: (index: number, total: number, url: string, error: unknown) => void
 }
 
 export interface DownloadResult {
   added: number
-  removed: number
 }
 
 /**
@@ -67,8 +62,6 @@ export async function downloadToManifest(options: DownloadOptions): Promise<Down
   const workDir = resolveWorkDir(options.workDir)
   const manifestPath = join(workDir, 'manifest.json')
   const imagesDir = join(workDir, 'images')
-  const maxImages = options.maxImages ?? options.imageUrls.length
-  const keepMax = options.keepMax ?? Infinity
 
   if (!existsSync(imagesDir)) {
     mkdirSync(imagesDir, { recursive: true })
@@ -82,10 +75,9 @@ export async function downloadToManifest(options: DownloadOptions): Promise<Down
 
   const newUrls = options.imageUrls
     .filter((url) => !existingHashes.has(hashUrl(url)))
-    .slice(0, maxImages)
 
   if (newUrls.length === 0) {
-    return { added: 0, removed: 0 }
+    return { added: 0 }
   }
 
   let added = 0
@@ -103,15 +95,9 @@ export async function downloadToManifest(options: DownloadOptions): Promise<Down
     }
   }
 
-  let removed = 0
-  while (manifest.images.length > keepMax) {
-    manifest.images.shift()
-    removed++
-  }
-
   writeManifest(manifestPath, manifest)
 
-  return { added, removed }
+  return { added }
 }
 
 export async function crawl(options: CrawlOptions): Promise<DownloadResult> {
@@ -123,7 +109,7 @@ export async function crawl(options: CrawlOptions): Promise<DownloadResult> {
 
   if (rules.length === 0) {
     console.log('No crawl rules found, skipping.')
-    return { added: 0, removed: 0 }
+    return { added: 0 }
   }
 
   const manifest = readManifest(workDir)
@@ -155,19 +141,17 @@ export async function crawl(options: CrawlOptions): Promise<DownloadResult> {
 
   if (allUrls.length === 0) {
     console.log('No new images found from any rule.')
-    return { added: 0, removed: 0 }
+    return { added: 0 }
   }
 
   const result = await downloadToManifest({
     workDir,
     imageUrls: allUrls,
     downloadHeaders,
-    maxImages: options.maxImages,
-    keepMax: options.keepMax,
     onError: (_i, _total, url, e) => console.error(`  Failed to download ${url}:`, e),
   })
 
-  console.log(`Done: +${result.added} images, -${result.removed} evicted`)
+  console.log(`Done: +${result.added} images`)
   return result
 }
 

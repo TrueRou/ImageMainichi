@@ -19691,7 +19691,7 @@ var require_core = __commonJS({
       process.env["PATH"] = `${inputPath}${path.delimiter}${process.env["PATH"]}`;
     }
     exports2.addPath = addPath;
-    function getInput2(name, options) {
+    function getInput(name, options) {
       const val = process.env[`INPUT_${name.replace(/ /g, "_").toUpperCase()}`] || "";
       if (options && options.required && !val) {
         throw new Error(`Input required and not supplied: ${name}`);
@@ -19701,9 +19701,9 @@ var require_core = __commonJS({
       }
       return val.trim();
     }
-    exports2.getInput = getInput2;
+    exports2.getInput = getInput;
     function getMultilineInput(name, options) {
-      const inputs = getInput2(name, options).split("\n").filter((x) => x !== "");
+      const inputs = getInput(name, options).split("\n").filter((x) => x !== "");
       if (options && options.trimWhitespace === false) {
         return inputs;
       }
@@ -19713,7 +19713,7 @@ var require_core = __commonJS({
     function getBooleanInput(name, options) {
       const trueValue = ["true", "True", "TRUE"];
       const falseValue = ["false", "False", "FALSE"];
-      const val = getInput2(name, options);
+      const val = getInput(name, options);
       if (trueValue.includes(val))
         return true;
       if (falseValue.includes(val))
@@ -26592,14 +26592,10 @@ function writeManifest(path, manifest) {
 // src/index.ts
 async function run() {
   try {
-    const maxImages = parseInt(core.getInput("max-images") || "10", 10);
-    const keepMax = parseInt(core.getInput("keep-max") || "200", 10);
     const workDir = process.env.GITHUB_WORKSPACE || process.cwd();
-    core.info(`Crawling with maxImages=${maxImages}, keepMax=${keepMax}`);
     core.info(`Working directory: ${workDir}`);
-    const result = await crawl({ maxImages, keepMax, workDir });
+    const result = await crawl({ workDir });
     core.setOutput("added", result.added);
-    core.setOutput("removed", result.removed);
     if (result.added > 0) {
       core.info(`Successfully added ${result.added} new images`);
     } else {

@@ -15,9 +15,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: TrueRou/ImageMainichi/packages/action@main
-        with:
-          max-images: '10'
-          keep-max: '200'
 
       - name: Commit & Push
         run: |
