@@ -1,13 +1,15 @@
 import { parse } from 'node-html-parser'
-import type { Fetcher, ManhuaguiRule, RuleResult } from '../types.js'
+import type { ExecuteRuleOptions, Fetcher, ManhuaguiRule, RuleResult } from '../types.js'
 
 const IMAGE_HOST = 'https://i.hamreus.com'
+const CHAPTER_DELAY_MS = 5000
+const MAX_RETRIES = 3
 const DOWNLOAD_HEADERS: Record<string, string> = {
   Referer: 'https://www.manhuagui.com/',
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
 }
 
-export async function executeManhuaguiRule(rule: ManhuaguiRule, fetch: Fetcher): Promise<RuleResult> {
+export async function executeManhuaguiRule(rule: ManhuaguiRule, fetch: Fetcher, options?: ExecuteRuleOptions): Promise<RuleResult> {
   const comicUrl = normalizeComicUrl(rule.url)
   const chapterUrls = await loadChapterUrls(comicUrl, fetch)
 
@@ -15,10 +17,21 @@ export async function executeManhuaguiRule(rule: ManhuaguiRule, fetch: Fetcher):
     ? chapterUrls.slice(0, 1)
     : chapterUrls
 
-  const allImages = await Promise.all(targets.map((url) => loadChapterImages(url, fetch)))
+  const cursor = options?.cursor
+  const allImages: string[] = []
+  for (let i = 0; i < targets.length; i++) {
+    // 增量：遇到上次爬到的章节就停止
+    if (cursor && targets[i] === cursor) break
+    if (i > 0) await sleep(CHAPTER_DELAY_MS)
+    const images = await fetchWithRetry(() => loadChapterImages(targets[i], fetch))
+    allImages.push(...images)
+  }
+
   return {
-    imageUrls: Array.from(new Set(allImages.flat())),
+    imageUrls: Array.from(new Set(allImages)),
     downloadHeaders: DOWNLOAD_HEADERS,
+    // 游标记录本次最新章节，下次从这里开始跳过
+    cursor: targets[0],
   }
 }
 
@@ -209,6 +222,22 @@ function encodeKey(value: number, base: number): string {
     ? String.fromCharCode(remainder + 29)
     : '0123456789abcdefghijklmnopqrstuvwxyz'[remainder]
   return prefix + suffix
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function fetchWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn()
+    } catch (e) {
+      if (attempt === MAX_RETRIES - 1) throw e
+      await sleep((attempt + 1) * 3000)
+    }
+  }
+  throw new Error('unreachable')
 }
 
 const keyStrBase64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='

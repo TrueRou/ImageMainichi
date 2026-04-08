@@ -30,6 +30,7 @@ export function parseManifest(raw: unknown): Manifest {
     name: obj.name,
     description: typeof obj.description === 'string' ? obj.description : undefined,
     images,
+    cursors: obj.cursors && typeof obj.cursors === 'object' ? obj.cursors as Record<string, string> : undefined,
   }
 }
 

@@ -25894,7 +25894,8 @@ function parseManifest(raw) {
   return {
     name: obj.name,
     description: typeof obj.description === "string" ? obj.description : void 0,
-    images
+    images,
+    cursors: obj.cursors && typeof obj.cursors === "object" ? obj.cursors : void 0
   };
 }
 function parseRule(raw) {
@@ -26090,18 +26091,31 @@ function extractContentImages(xml) {
 // ../core/dist/rules/manhuagui.js
 var import_node_html_parser2 = __toESM(require_dist(), 1);
 var IMAGE_HOST = "https://i.hamreus.com";
+var CHAPTER_DELAY_MS = 5e3;
+var MAX_RETRIES = 3;
 var DOWNLOAD_HEADERS = {
   Referer: "https://www.manhuagui.com/",
   "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 };
-async function executeManhuaguiRule(rule, fetch2) {
+async function executeManhuaguiRule(rule, fetch2, options) {
   const comicUrl = normalizeComicUrl(rule.url);
   const chapterUrls = await loadChapterUrls(comicUrl, fetch2);
   const targets = rule.scope === "latest-chapter" ? chapterUrls.slice(0, 1) : chapterUrls;
-  const allImages = await Promise.all(targets.map((url) => loadChapterImages(url, fetch2)));
+  const cursor = options?.cursor;
+  const allImages = [];
+  for (let i = 0; i < targets.length; i++) {
+    if (cursor && targets[i] === cursor)
+      break;
+    if (i > 0)
+      await sleep(CHAPTER_DELAY_MS);
+    const images = await fetchWithRetry(() => loadChapterImages(targets[i], fetch2));
+    allImages.push(...images);
+  }
   return {
-    imageUrls: Array.from(new Set(allImages.flat())),
-    downloadHeaders: DOWNLOAD_HEADERS
+    imageUrls: Array.from(new Set(allImages)),
+    downloadHeaders: DOWNLOAD_HEADERS,
+    // 游标记录本次最新章节，下次从这里开始跳过
+    cursor: targets[0]
   };
 }
 async function loadChapterUrls(comicUrl, fetch2) {
@@ -26218,6 +26232,21 @@ function encodeKey(value, base) {
   const remainder = value % base;
   const suffix = remainder > 35 ? String.fromCharCode(remainder + 29) : "0123456789abcdefghijklmnopqrstuvwxyz"[remainder];
   return prefix + suffix;
+}
+function sleep(ms) {
+  return new Promise((resolve3) => setTimeout(resolve3, ms));
+}
+async function fetchWithRetry(fn) {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt === MAX_RETRIES - 1)
+        throw e;
+      await sleep((attempt + 1) * 3e3);
+    }
+  }
+  throw new Error("unreachable");
 }
 var keyStrBase64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 function decompressFromBase64(input) {
@@ -26392,7 +26421,7 @@ function _decompress(length, resetValue, getNextValue) {
 }
 
 // ../core/dist/rules/index.js
-async function executeRule(rule, fetch2) {
+async function executeRule(rule, fetch2, options) {
   switch (rule.type) {
     case "json-api":
       return executeJsonApiRule(rule, fetch2);
@@ -26401,7 +26430,7 @@ async function executeRule(rule, fetch2) {
     case "rss":
       return executeRssRule(rule, fetch2);
     case "manhuagui":
-      return executeManhuaguiRule(rule, fetch2);
+      return executeManhuaguiRule(rule, fetch2, options);
     default:
       throw new Error(`Unknown rule type: ${rule.type}`);
   }
@@ -26447,28 +26476,37 @@ async function downloadToManifest(options) {
 }
 async function crawl(options) {
   const workDir = resolveWorkDir(options.workDir);
+  const manifestPath = (0, import_node_path.join)(workDir, "manifest.json");
   const rules = listRules(workDir).map((record) => record.rule).filter((rule) => rule.mode === "crawl");
   if (rules.length === 0) {
     console.log("No crawl rules found, skipping.");
     return { added: 0, removed: 0 };
   }
+  const manifest = readManifest(workDir);
+  const cursors = { ...manifest.cursors };
   const allUrls = [];
   let downloadHeaders;
   for (const rule of rules) {
     try {
       console.log(`Executing rule: ${rule.name}`);
-      const result2 = await executeRule(rule, fetch);
+      const cursor = cursors[rule.name];
+      const result2 = await executeRule(rule, fetch, { cursor });
       console.log(`  Found ${result2.imageUrls.length} images`);
       allUrls.push(...result2.imageUrls);
       if (result2.downloadHeaders) {
         downloadHeaders = result2.downloadHeaders;
       }
+      if (result2.cursor) {
+        cursors[rule.name] = result2.cursor;
+      }
     } catch (e) {
       console.error(`  Rule "${rule.name}" failed:`, e);
     }
   }
+  manifest.cursors = Object.keys(cursors).length > 0 ? cursors : void 0;
+  writeManifest(manifestPath, manifest);
   if (allUrls.length === 0) {
-    console.log("No images found from any rule.");
+    console.log("No new images found from any rule.");
     return { added: 0, removed: 0 };
   }
   const result = await downloadToManifest({

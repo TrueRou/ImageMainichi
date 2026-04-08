@@ -116,6 +116,7 @@ export async function downloadToManifest(options: DownloadOptions): Promise<Down
 
 export async function crawl(options: CrawlOptions): Promise<DownloadResult> {
   const workDir = resolveWorkDir(options.workDir)
+  const manifestPath = join(workDir, 'manifest.json')
   const rules = listRules(workDir)
     .map((record) => record.rule)
     .filter((rule) => rule.mode === 'crawl')
@@ -125,24 +126,35 @@ export async function crawl(options: CrawlOptions): Promise<DownloadResult> {
     return { added: 0, removed: 0 }
   }
 
+  const manifest = readManifest(workDir)
+  const cursors = { ...manifest.cursors }
+
   const allUrls: string[] = []
   let downloadHeaders: Record<string, string> | undefined
   for (const rule of rules) {
     try {
       console.log(`Executing rule: ${rule.name}`)
-      const result = await executeRule(rule, fetch)
+      const cursor = cursors[rule.name]
+      const result = await executeRule(rule, fetch, { cursor })
       console.log(`  Found ${result.imageUrls.length} images`)
       allUrls.push(...result.imageUrls)
       if (result.downloadHeaders) {
         downloadHeaders = result.downloadHeaders
+      }
+      if (result.cursor) {
+        cursors[rule.name] = result.cursor
       }
     } catch (e) {
       console.error(`  Rule "${rule.name}" failed:`, e)
     }
   }
 
+  // 更新 cursors 到 manifest（即使没有新图片也要保存游标）
+  manifest.cursors = Object.keys(cursors).length > 0 ? cursors : undefined
+  writeManifest(manifestPath, manifest)
+
   if (allUrls.length === 0) {
-    console.log('No images found from any rule.')
+    console.log('No new images found from any rule.')
     return { added: 0, removed: 0 }
   }
 

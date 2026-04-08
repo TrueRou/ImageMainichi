@@ -7,6 +7,8 @@ export interface Manifest {
   description?: string
   /** 静态图片列表（由 Actions 爬取后自动维护，或手动添加） */
   images: ImageEntry[]
+  /** 各规则的增量爬取游标，key 为规则名 */
+  cursors?: Record<string, string>
 }
 
 export interface ImageEntry {
@@ -89,4 +91,11 @@ export interface RuleResult {
   imageUrls: string[]
   /** 下载图片时需要携带的 headers（如防盗链 Referer） */
   downloadHeaders?: Record<string, string>
+  /** 增量爬取游标，由调用方存入 manifest.cursors */
+  cursor?: string
+}
+
+export interface ExecuteRuleOptions {
+  /** 上次爬取的游标，用于增量爬取 */
+  cursor?: string
 }
