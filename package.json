@@ -5,7 +5,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --filter @image-mainichi/worker dev",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "cli": "pnpm --filter @image-mainichi/cli exec node dist/index.js"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

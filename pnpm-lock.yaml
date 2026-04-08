@@ -20,9 +20,25 @@ importers:
       '@image-mainichi/core':
         specifier: workspace:*
         version: link:../core
+      '@image-mainichi/node':
+        specifier: workspace:*
+        version: link:../node
       node-html-parser:
         specifier: ^6.1.0
         version: 6.1.13
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/cli:
+    dependencies:
+      '@image-mainichi/node':
+        specifier: workspace:*
+        version: link:../node
     devDependencies:
       '@types/node':
         specifier: ^25.5.0
@@ -37,6 +53,19 @@ importers:
         specifier: ^6.1.0
         version: 6.1.13
     devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/node:
+    dependencies:
+      '@image-mainichi/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

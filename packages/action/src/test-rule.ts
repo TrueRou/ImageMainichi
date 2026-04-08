@@ -1,6 +1,4 @@
-import { resolve } from 'node:path'
-import { executeRule, type Rule } from '@image-mainichi/core'
-import { loadRules } from './crawl.js'
+import { formatTestRuleResult, testRule } from '@image-mainichi/node'
 
 interface CliOptions {
   rule: string
@@ -9,52 +7,21 @@ interface CliOptions {
   json: boolean
 }
 
-interface TestRuleResult {
-  rule: Pick<Rule, 'name' | 'type' | 'mode'>
-  fetchedUrls: string[]
-  imageUrls: string[]
-}
-
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2))
-  const rules = loadRules(resolve(options.workDir, 'rules'))
-  const rule = findRule(rules, options.rule)
-
-  if (!rule) {
-    throw new Error(`Rule not found: ${options.rule}`)
-  }
-
-  const fetchedUrls: string[] = []
-  const tracedFetch: typeof fetch = async (input, init) => {
-    const url = typeof input === 'string'
-      ? input
-      : input instanceof URL
-        ? input.href
-        : input.url
-
-    fetchedUrls.push(url)
-    return fetch(input, init)
-  }
-
-  const imageUrls = await executeRule(rule, tracedFetch)
-  const result: TestRuleResult = {
-    rule: {
-      name: rule.name,
-      type: rule.type,
-      mode: rule.mode,
-    },
-    fetchedUrls,
-    imageUrls: typeof options.limit === 'number'
-      ? imageUrls.slice(0, options.limit)
-      : imageUrls,
-  }
+  const result = await testRule({
+    selector: options.rule,
+    workDir: options.workDir,
+    baseDir: process.env.INIT_CWD || process.cwd(),
+    limit: options.limit,
+  })
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2))
     return
   }
 
-  printResult(result)
+  console.log(formatTestRuleResult(result))
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -93,29 +60,6 @@ function parseArgs(args: string[]): CliOptions {
   }
 
   return { rule, workDir, limit, json }
-}
-
-function findRule(rules: Rule[], target: string): Rule | undefined {
-  const normalized = target.endsWith('.json') ? target.slice(0, -5) : target
-  return rules.find((rule) => rule.name === target || rule.name === normalized)
-}
-
-function printResult(result: TestRuleResult): void {
-  console.log(`Rule: ${result.rule.name}`)
-  console.log(`Type: ${result.rule.type}`)
-  console.log(`Mode: ${result.rule.mode}`)
-  console.log('')
-
-  console.log(`Fetched URLs (${result.fetchedUrls.length}):`)
-  for (const url of result.fetchedUrls) {
-    console.log(`- ${url}`)
-  }
-
-  console.log('')
-  console.log(`Image URLs (${result.imageUrls.length}):`)
-  for (const url of result.imageUrls) {
-    console.log(`- ${url}`)
-  }
 }
 
 main().catch((error) => {

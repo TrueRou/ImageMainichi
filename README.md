@@ -88,7 +88,20 @@
 
 ### 1. 创建数据源仓库
 
-从 `template/` 目录复制内容到新仓库。目录结构如下：
+先安装依赖并构建 CLI：
+
+```bash
+pnpm install
+pnpm build
+```
+
+然后用 CLI 初始化一个新的数据源目录：
+
+```bash
+pnpm cli init my-source --name my-image-source
+```
+
+生成后的目录结构如下：
 
 ```text
 .
@@ -171,24 +184,31 @@ Worker 的 `SOURCES` 配置示例：
 
 ### 6. 本地测试单条规则
 
-可以直接在数据源仓库本地测试某条规则，不会下载图片，也不会修改 `manifest.json`：
+推荐直接使用 CLI 在数据源仓库本地测试某条规则，不会下载图片，也不会修改 `manifest.json`：
 
 ```bash
-pnpm --filter @image-mainichi/action build
-pnpm --filter @image-mainichi/action test-rule --rule example-rss --work-dir /path/to/source
+pnpm cli rule list --work-dir ./template
+pnpm cli rule test manhuagui --work-dir ./template
+pnpm cli rule test example-manhuagui-latest --work-dir ./template --json
 ```
+
+`rule test` 的 `<selector>` 支持三种直觉化写法：
+
+- 规则文件 basename，例如 `manhuagui`
+- 规则 `name`，例如 `example-manhuagui-latest`
+- 规则文件路径，例如 `rules/manhuagui.json`
 
 可选参数：
 
-- `--rule <name>`：规则名
 - `--work-dir <path>`：数据源仓库目录，默认当前目录
 - `--limit <n>`：限制输出的图片 URL 数量
 - `--json`：以 JSON 输出结果
+- `--list`：列出当前 `rules/*.json` 中的可选规则
 
-例如测试看漫画规则：
+兼容入口仍然保留：
 
 ```bash
-pnpm --filter @image-mainichi/action test-rule --rule example-manhuagui-latest --work-dir /path/to/source
+pnpm --filter @image-mainichi/action test-rule --rule example-manhuagui-latest --work-dir ./template
 ```
 
 ## 规则类型
@@ -265,7 +285,9 @@ pnpm --filter @image-mainichi/action test-rule --rule example-manhuagui-latest -
 ```text
 packages/
 ├── core/     # 共享类型 + manifest/rule 校验 + 规则引擎
+├── node/     # Node 侧共享逻辑：规则发现、测试、crawl、模板初始化
+├── cli/      # 面向用户的 Node CLI
 ├── worker/   # 读取 manifest.json 与 rules/*.json 的 Cloudflare Workers API
-└── action/   # 读取 rules/*.json 并生成公开图片结果
+└── action/   # GitHub Action 适配层
 template/     # 数据源仓库模板
 ```
