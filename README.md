@@ -7,10 +7,10 @@
 
 ## 执行模式总览
 
-| 模式 | 核心思路 | 运行位置 | 图片来源 | 适用场景 |
-|------|----------|----------|----------|----------|
-| `crawl` | 预先抓取、预先保存 | GitHub Actions | 仓库中的 `images/` | GitHub Pages、纯静态托管、希望结果可审计可回溯 |
-| `on-demand` | 请求时抓取、请求时计算 | Cloudflare Workers | 静态图片 + 实时规则结果 | 需要在线接口、随机分发、按标签过滤、实时更新 |
+| 模式        | 核心思路              | 运行位置           | 图片来源                | 适用场景                                     |
+|-------------|-----------------------|--------------------|-------------------------|----------------------------------------------|
+| `crawl`     | 预先抓取、预先保存     | GitHub Actions     | 仓库中的 `images/`      | GitHub Pages、纯静态托管、希望结果可审计可回溯 |
+| `on-demand` | 请求时抓取、请求时计算 | Cloudflare Workers | 静态图片 + 实时规则结果 | 需要在线接口、随机分发、按标签过滤、实时更新    |
 
 ## 架构
 
@@ -30,29 +30,10 @@
 │  ├── images/         ← 公开：静态图片文件         │
 │  ├── rules/*.json    ← 规则配置                   │
 │  └── .github/workflows/crawl.yml                │
-└──────────────┬──────────────────────────────────┘
-               │ fetch manifest.json + rules/*.json
-               ▼
-┌─────────────────────────────────────────────────┐
-│  Cloudflare Worker（on-demand）                  │
-│  GET /      → 302 随机图片                        │
-│  GET /json  → 随机图片元数据                      │
-│  GET /health → 健康检查                           │
-│  可在请求时实时执行 on-demand 规则                │
 └─────────────────────────────────────────────────┘
 ```
 
-## manifest 与 rules 的分离
-
-当你公开托管 `manifest.json` 和 `images/` 时，通常并不希望公开抓取结果之外的其它内容。因此现在推荐：
-
-- `manifest.json` 只保存公开图片结果
-- `rules/*.json` 单独保存规则定义
-- Action 与 Worker 都从 `rules/*.json` 读取规则
-
 ## crawl 模式
-
-### 工作方式
 
 `crawl` 模式下，规则不会在用户请求时执行，而是由数据源仓库中的 GitHub Actions 定时运行：
 
@@ -62,14 +43,7 @@
 4. 下载图片到 `images/`
 5. 回写并提交最新的 `manifest.json`
 
-### 规则要求
-
-- 需要定时抓取的规则请标记为 `crawl`
-- `crawl` 规则必须包含 `schedule`
-
 ## on-demand 模式
-
-### 工作方式
 
 `on-demand` 模式下，Cloudflare Worker 会在收到请求时：
 
@@ -78,11 +52,6 @@
 3. 读取静态图片列表
 4. 实时执行其中的 `on-demand` 规则
 5. 将静态图片与动态结果合并后返回随机结果
-
-### 规则要求
-
-- 需要请求时实时执行的规则请标记为 `on-demand`
-- `on-demand` 规则不能包含 `schedule`
 
 ## 快速开始
 
@@ -112,19 +81,7 @@ pnpm cli init my-source --name my-image-source
 └── .github/workflows/crawl.yml
 ```
 
-### 2. 配置公开 manifest
-
-`manifest.json` 只包含公开信息：
-
-```json
-{
-  "name": "my-source",
-  "description": "My image source",
-  "images": []
-}
-```
-
-### 3. 配置规则
+### 2. 配置规则
 
 在 `rules/` 目录下为每条规则创建一个 JSON 文件。
 
@@ -141,19 +98,7 @@ pnpm cli init my-source --name my-image-source
 }
 ```
 
-`rules/example-on-demand.json`：
-
-```json
-{
-  "name": "example-on-demand",
-  "type": "rss",
-  "mode": "on-demand",
-  "url": "https://example.com/feed.xml",
-  "imageFrom": "enclosure"
-}
-```
-
-### 4. 启用 GitHub Actions
+### 3. 启用 GitHub Actions
 
 工作流会自动：
 
@@ -162,25 +107,6 @@ pnpm cli init my-source --name my-image-source
 - 下载图片到 `images/`
 - 更新公开 `manifest.json`
 
-### 5. 部署 Worker
-
-```bash
-git clone https://github.com/TrueRou/ImageMainichi.git
-cd ImageMainichi
-pnpm install
-pnpm dev
-cd packages/worker && pnpm deploy
-```
-
-Worker 的 `SOURCES` 配置示例：
-
-```json
-[
-  {
-    "repo": "owner/repo"
-  }
-]
-```
 
 ### 6. 本地测试单条规则
 
@@ -188,15 +114,8 @@ Worker 的 `SOURCES` 配置示例：
 
 ```bash
 pnpm cli rule list --work-dir ./template
-pnpm cli rule test manhuagui --work-dir ./template
-pnpm cli rule test example-manhuagui-latest --work-dir ./template --json
+pnpm cli rule test example-rule --work-dir ./template --download
 ```
-
-`rule test` 的 `<selector>` 支持三种直觉化写法：
-
-- 规则文件 basename，例如 `manhuagui`
-- 规则 `name`，例如 `example-manhuagui-latest`
-- 规则文件路径，例如 `rules/manhuagui.json`
 
 可选参数：
 
@@ -204,12 +123,7 @@ pnpm cli rule test example-manhuagui-latest --work-dir ./template --json
 - `--limit <n>`：限制输出的图片 URL 数量
 - `--json`：以 JSON 输出结果
 - `--list`：列出当前 `rules/*.json` 中的可选规则
-
-兼容入口仍然保留：
-
-```bash
-pnpm --filter @image-mainichi/action test-rule --rule example-manhuagui-latest --work-dir ./template
-```
+- `--download`：下载图片到 `images/`（本地测试时使用）
 
 ## 规则类型
 
@@ -271,14 +185,14 @@ pnpm --filter @image-mainichi/action test-rule --rule example-manhuagui-latest -
 - `crawl` — 由 GitHub Actions 定时执行，结果写入公开仓库
 - `on-demand` — 由 Worker 在请求时实时执行
 
-## API
+## Worker API
 
-| 端点 | 说明 |
-|------|------|
-| `GET /` | 302 重定向到随机图片 |
-| `GET /json` | 返回随机图片 JSON `{ url, tags, source }` |
-| `GET /?tag=xxx` | 按标签过滤 |
-| `GET /health` | 健康检查 |
+| 端点            | 说明                                      |
+|-----------------|-------------------------------------------|
+| `GET /`         | 302 重定向到随机图片                      |
+| `GET /json`     | 返回随机图片 JSON `{ url, tags, source }` |
+| `GET /?tag=xxx` | 按标签过滤                                |
+| `GET /health`   | 健康检查                                  |
 
 ## 项目结构
 
@@ -287,7 +201,7 @@ packages/
 ├── core/     # 共享类型 + manifest/rule 校验 + 规则引擎
 ├── node/     # Node 侧共享逻辑：规则发现、测试、crawl、模板初始化
 ├── cli/      # 面向用户的 Node CLI
-├── worker/   # 读取 manifest.json 与 rules/*.json 的 Cloudflare Workers API
+├── worker/   # Cloudflare Workers API
 └── action/   # GitHub Action 适配层
 template/     # 数据源仓库模板
 ```

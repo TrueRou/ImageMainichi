@@ -1,10 +1,10 @@
 import { parse } from 'node-html-parser'
-import type { CssSelectorRule, Fetcher } from '../types.js'
+import type { CssSelectorRule, Fetcher, RuleResult } from '../types.js'
 
 /**
  * 执行 CSS 选择器规则：请求 HTML → 用选择器提取指定属性
  */
-export async function executeCssSelectorRule(rule: CssSelectorRule, fetch: Fetcher): Promise<string[]> {
+export async function executeCssSelectorRule(rule: CssSelectorRule, fetch: Fetcher): Promise<RuleResult> {
   const res = await fetch(rule.url)
 
   if (!res.ok) {
@@ -19,12 +19,11 @@ export async function executeCssSelectorRule(rule: CssSelectorRule, fetch: Fetch
   for (const el of elements) {
     const value = el.getAttribute(rule.attribute)
     if (value) {
-      // 处理相对 URL
       urls.push(resolveUrl(value, rule.url))
     }
   }
 
-  return urls
+  return { imageUrls: urls }
 }
 
 function resolveUrl(value: string, baseUrl: string): string {

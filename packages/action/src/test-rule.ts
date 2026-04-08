@@ -14,6 +14,7 @@ async function main(): Promise<void> {
     workDir: options.workDir,
     baseDir: process.env.INIT_CWD || process.cwd(),
     limit: options.limit,
+    onDebug: (message: string) => console.error(`[debug] ${message}`),
   })
 
   if (options.json) {

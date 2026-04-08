@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, cpSync
 import { createHash } from 'node:crypto'
 import { join, extname, basename, dirname, isAbsolute, normalize, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { executeRule, parseManifest, parseRule, type Manifest, type ImageEntry, type Rule } from '@image-mainichi/core'
+import { executeRule, parseManifest, parseRule, type Manifest, type ImageEntry, type Rule, type RuleResult } from '@image-mainichi/core'
 
 export interface CrawlOptions {
   maxImages: number
@@ -23,12 +23,14 @@ export interface TestRuleOptions {
   workDir?: string
   baseDir?: string
   limit?: number
+  onDebug?: (message: string) => void
 }
 
 export interface TestRuleResult {
   rule: Pick<Rule, 'name' | 'type' | 'mode'>
   fetchedUrls: string[]
   imageUrls: string[]
+  downloadHeaders?: Record<string, string>
 }
 
 export interface InitTemplateOptions {
@@ -41,13 +43,31 @@ const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(PACKAGE_DIR, '../../..')
 const TEMPLATE_DIR = resolve(REPO_ROOT, 'template')
 
-export async function crawl(options: CrawlOptions): Promise<{ added: number; removed: number }> {
+export interface DownloadOptions {
+  workDir: string
+  imageUrls: string[]
+  downloadHeaders?: Record<string, string>
+  maxImages?: number
+  keepMax?: number
+  onProgress?: (index: number, total: number, filename: string, size: number) => void
+  onError?: (index: number, total: number, url: string, error: unknown) => void
+}
+
+export interface DownloadResult {
+  added: number
+  removed: number
+}
+
+/**
+ * 下载图片并更新 manifest — crawl 和 CLI --download 的共享实现。
+ * 去重（基于 URL hash）、下载到 images/、写 manifest、FIFO 淘汰。
+ */
+export async function downloadToManifest(options: DownloadOptions): Promise<DownloadResult> {
   const workDir = resolveWorkDir(options.workDir)
   const manifestPath = join(workDir, 'manifest.json')
   const imagesDir = join(workDir, 'images')
-  const rules = listRules(workDir)
-    .map((record) => record.rule)
-    .filter((rule) => rule.mode === 'crawl')
+  const maxImages = options.maxImages ?? options.imageUrls.length
+  const keepMax = options.keepMax ?? Infinity
 
   if (!existsSync(imagesDir)) {
     mkdirSync(imagesDir, { recursive: true })
@@ -55,18 +75,66 @@ export async function crawl(options: CrawlOptions): Promise<{ added: number; rem
 
   const manifest = readManifest(workDir)
 
+  const existingHashes = new Set(
+    manifest.images.map((img) => hashUrl(img.url))
+  )
+
+  const newUrls = options.imageUrls
+    .filter((url) => !existingHashes.has(hashUrl(url)))
+    .slice(0, maxImages)
+
+  if (newUrls.length === 0) {
+    return { added: 0, removed: 0 }
+  }
+
+  let added = 0
+  for (let i = 0; i < newUrls.length; i++) {
+    const url = newUrls[i]
+    try {
+      const entry = await downloadImage(url, imagesDir, options.downloadHeaders)
+      if (entry) {
+        manifest.images.push(entry)
+        added++
+        options.onProgress?.(i, newUrls.length, entry.url, 0)
+      }
+    } catch (e) {
+      options.onError?.(i, newUrls.length, url, e)
+    }
+  }
+
+  let removed = 0
+  while (manifest.images.length > keepMax) {
+    manifest.images.shift()
+    removed++
+  }
+
+  writeManifest(manifestPath, manifest)
+
+  return { added, removed }
+}
+
+export async function crawl(options: CrawlOptions): Promise<DownloadResult> {
+  const workDir = resolveWorkDir(options.workDir)
+  const rules = listRules(workDir)
+    .map((record) => record.rule)
+    .filter((rule) => rule.mode === 'crawl')
+
   if (rules.length === 0) {
     console.log('No crawl rules found, skipping.')
     return { added: 0, removed: 0 }
   }
 
   const allUrls: string[] = []
+  let downloadHeaders: Record<string, string> | undefined
   for (const rule of rules) {
     try {
       console.log(`Executing rule: ${rule.name}`)
-      const urls = await executeRule(rule, fetch)
-      console.log(`  Found ${urls.length} images`)
-      allUrls.push(...urls)
+      const result = await executeRule(rule, fetch)
+      console.log(`  Found ${result.imageUrls.length} images`)
+      allUrls.push(...result.imageUrls)
+      if (result.downloadHeaders) {
+        downloadHeaders = result.downloadHeaders
+      }
     } catch (e) {
       console.error(`  Rule "${rule.name}" failed:`, e)
     }
@@ -77,37 +145,17 @@ export async function crawl(options: CrawlOptions): Promise<{ added: number; rem
     return { added: 0, removed: 0 }
   }
 
-  const existingHashes = new Set(
-    manifest.images.map((img) => hashUrl(img.url))
-  )
+  const result = await downloadToManifest({
+    workDir,
+    imageUrls: allUrls,
+    downloadHeaders,
+    maxImages: options.maxImages,
+    keepMax: options.keepMax,
+    onError: (_i, _total, url, e) => console.error(`  Failed to download ${url}:`, e),
+  })
 
-  const newUrls = allUrls
-    .filter((url) => !existingHashes.has(hashUrl(url)))
-    .slice(0, options.maxImages)
-
-  let added = 0
-  for (const url of newUrls) {
-    try {
-      const entry = await downloadImage(url, imagesDir)
-      if (entry) {
-        manifest.images.push(entry)
-        added++
-      }
-    } catch (e) {
-      console.error(`  Failed to download ${url}:`, e)
-    }
-  }
-
-  let removed = 0
-  while (manifest.images.length > options.keepMax) {
-    manifest.images.shift()
-    removed++
-  }
-
-  writeManifest(manifestPath, manifest)
-
-  console.log(`Done: +${added} images, -${removed} evicted`)
-  return { added, removed }
+  console.log(`Done: +${result.added} images, -${result.removed} evicted`)
+  return result
 }
 
 export function resolveWorkDir(workDir = process.cwd(), baseDir = process.env.INIT_CWD || process.cwd()): string {
@@ -175,9 +223,21 @@ export function findRule(records: RuleRecord[], selector: string): RuleRecord {
 }
 
 export async function testRule(options: TestRuleOptions): Promise<TestRuleResult> {
+  const debug = options.onDebug ?? (() => {})
   const workDir = resolveWorkDir(options.workDir, options.baseDir)
+  debug(`Resolved work directory: ${workDir}`)
+
   const records = listRules(workDir)
+  debug(`Discovered ${records.length} rule file(s) under ${join(workDir, 'rules')}`)
+  for (const record of records) {
+    debug(`- ${record.fileBaseName} -> ${record.rule.name} [${record.rule.type} | ${record.rule.mode}] (${record.relativePath})`)
+  }
+
+  debug(`Selecting rule with selector: ${options.selector}`)
   const record = findRule(records, options.selector)
+  debug(`Matched rule: ${record.rule.name} from ${record.relativePath}`)
+  debug(`Rule URL: ${record.rule.url}`)
+  debug(`Rule mode/type: ${record.rule.mode} / ${record.rule.type}`)
 
   const fetchedUrls: string[] = []
   const tracedFetch: typeof fetch = async (input, init) => {
@@ -188,10 +248,40 @@ export async function testRule(options: TestRuleOptions): Promise<TestRuleResult
         : input.url
 
     fetchedUrls.push(url)
-    return fetch(input, init)
+    debug(`Fetching: ${url}`)
+    if (init?.method) {
+      debug(`Fetch method: ${init.method}`)
+    }
+    if (init?.headers) {
+      debug(`Fetch headers present`)
+    }
+
+    try {
+      const response = await fetch(input, init)
+      debug(`Fetch response: ${response.status} ${response.statusText} <- ${url}`)
+      return response
+    } catch (error) {
+      if (error instanceof Error) {
+        debug(`Fetch error: ${error.message} <- ${url}`)
+        if ('cause' in error && error.cause) {
+          debug(`Fetch cause: ${String(error.cause)} <- ${url}`)
+        }
+        if ('stack' in error && error.stack) {
+          const stackLine = String(error.stack).split('\n')[1]
+          if (stackLine) {
+            debug(`Fetch stack: ${stackLine.trim()}`)
+          }
+        }
+      } else {
+        debug(`Fetch error: ${String(error)} <- ${url}`)
+      }
+      throw error
+    }
   }
 
-  const imageUrls = await executeRule(record.rule, tracedFetch)
+  debug('Executing rule')
+  const result = await executeRule(record.rule, tracedFetch)
+  debug(`Rule returned ${result.imageUrls.length} image URL(s)`)
 
   return {
     rule: {
@@ -201,8 +291,9 @@ export async function testRule(options: TestRuleOptions): Promise<TestRuleResult
     },
     fetchedUrls,
     imageUrls: typeof options.limit === 'number'
-      ? imageUrls.slice(0, options.limit)
-      : imageUrls,
+      ? result.imageUrls.slice(0, options.limit)
+      : result.imageUrls,
+    downloadHeaders: result.downloadHeaders,
   }
 }
 
@@ -250,8 +341,8 @@ export function initTemplate(options: InitTemplateOptions): string {
   return targetDir
 }
 
-async function downloadImage(url: string, imagesDir: string): Promise<ImageEntry | null> {
-  const res = await fetch(url)
+async function downloadImage(url: string, imagesDir: string, headers?: Record<string, string>): Promise<ImageEntry | null> {
+  const res = await fetch(url, headers ? { headers } : undefined)
   if (!res.ok) return null
 
   const buffer = Buffer.from(await res.arrayBuffer())

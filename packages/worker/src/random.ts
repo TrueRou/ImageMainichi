@@ -70,11 +70,11 @@ async function executeOnDemandRule(
     }
   }
 
-  const urls = await executeRule(rule, fetch)
+  const result = await executeRule(rule, fetch)
 
-  if (kvCache && urls.length > 0) {
-    await kvCache.put(cacheKey, JSON.stringify(urls), { expirationTtl: KV_CACHE_TTL })
+  if (kvCache && result.imageUrls.length > 0) {
+    await kvCache.put(cacheKey, JSON.stringify(result.imageUrls), { expirationTtl: KV_CACHE_TTL })
   }
 
-  return urls
+  return result.imageUrls
 }

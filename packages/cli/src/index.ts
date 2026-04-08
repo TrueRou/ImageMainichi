@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { formatRuleList, formatTestRuleResult, initTemplate, listRules, resolveWorkDir, testRule } from '@image-mainichi/node'
+import { downloadToManifest, formatRuleList, formatTestRuleResult, initTemplate, listRules, resolveWorkDir, testRule } from '@image-mainichi/node'
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
@@ -68,7 +68,7 @@ function runRuleList(args: string[]): void {
 }
 
 async function runRuleTest(args: string[]): Promise<void> {
-  const { workDir, limit, json, list, selector } = parseRuleTestArgs(args)
+  const { workDir, limit, json, list, dl, selector } = parseRuleTestArgs(args)
   const resolvedWorkDir = resolveWorkDir(workDir)
   const rules = listRules(resolvedWorkDir)
 
@@ -85,14 +85,25 @@ async function runRuleTest(args: string[]): Promise<void> {
     selector,
     workDir: resolvedWorkDir,
     limit,
+    onDebug: (message: string) => console.error(`[debug] ${message}`),
   })
 
   if (json) {
     console.log(JSON.stringify(result, null, 2))
-    return
+  } else {
+    console.log(formatTestRuleResult(result))
   }
 
-  console.log(formatTestRuleResult(result))
+  if (dl) {
+    console.log(`\nDownloading ${result.imageUrls.length} image(s) to ${resolvedWorkDir}/images/`)
+    const dlResult = await downloadToManifest({
+      workDir: resolvedWorkDir,
+      imageUrls: result.imageUrls,
+      downloadHeaders: result.downloadHeaders,
+      onError: (i, total, url, e) => console.error(`  [${i + 1}/${total}] ${e instanceof Error ? e.message : String(e)} <- ${url}`),
+    })
+    console.log(`Done: +${dlResult.added} added, -${dlResult.removed} evicted`)
+  }
 }
 
 function parseCommonArgs(args: string[]): { workDir: string } {
@@ -117,12 +128,14 @@ function parseRuleTestArgs(args: string[]): {
   limit?: number
   json: boolean
   list: boolean
+  dl: boolean
   selector?: string
 } {
   let workDir = process.cwd()
   let limit: number | undefined
   let json = false
   let list = false
+  let dl = false
   let selector: string | undefined
 
   for (let i = 0; i < args.length; i++) {
@@ -145,6 +158,9 @@ function parseRuleTestArgs(args: string[]): {
       case '--list':
         list = true
         break
+      case '--download':
+        dl = true
+        break
       default:
         if (arg.startsWith('--')) {
           throw new Error(`Unknown argument: ${arg}`)
@@ -154,13 +170,13 @@ function parseRuleTestArgs(args: string[]): {
     }
   }
 
-  return { workDir, limit, json, list, selector }
+  return { workDir, limit, json, list, dl, selector }
 }
 
 function printHelp(): void {
   console.log('imagemainichi init [dir] [--name <name>]')
   console.log('imagemainichi rule list [--work-dir <path>]')
-  console.log('imagemainichi rule test <selector> [--work-dir <path>] [--limit <n>] [--json] [--list]')
+  console.log('imagemainichi rule test <selector> [--work-dir <path>] [--limit <n>] [--json] [--list] [--download]')
 }
 
 main().catch((error) => {

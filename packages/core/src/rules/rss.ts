@@ -1,10 +1,10 @@
-import type { RssRule, Fetcher } from '../types.js'
+import type { RssRule, Fetcher, RuleResult } from '../types.js'
 
 /**
  * 执行 RSS/Atom 规则：请求 feed → 根据策略提取图片 URL
  * 使用正则解析 XML，避免引入重量级 XML 解析器
  */
-export async function executeRssRule(rule: RssRule, fetch: Fetcher): Promise<string[]> {
+export async function executeRssRule(rule: RssRule, fetch: Fetcher): Promise<RuleResult> {
   const res = await fetch(rule.url)
 
   if (!res.ok) {
@@ -26,7 +26,7 @@ export async function executeRssRule(rule: RssRule, fetch: Fetcher): Promise<str
       break
   }
 
-  return urls
+  return { imageUrls: urls }
 }
 
 /** 从 <enclosure url="..." type="image/..."> 提取 */

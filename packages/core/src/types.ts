@@ -82,3 +82,13 @@ export interface SourceConfig {
 // ============================================================
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>
+
+// ============================================================
+// RuleResult — 规则执行结果
+// ============================================================
+
+export interface RuleResult {
+  imageUrls: string[]
+  /** 下载图片时需要携带的 headers（如防盗链 Referer） */
+  downloadHeaders?: Record<string, string>
+}

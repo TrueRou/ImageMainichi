@@ -1,15 +1,14 @@
 import { parse } from 'node-html-parser'
-import type { Fetcher, ManhuaguiRule } from '../types.js'
+import type { Fetcher, ManhuaguiRule, RuleResult } from '../types.js'
 
-const DESKTOP_ROOT = 'https://www.manhuagui.com'
 const IMAGE_HOST = 'https://i.hamreus.com'
-const MANHUAGUI_HEADERS = {
-  Referer: `${DESKTOP_ROOT}/`,
-  'User-Agent': 'Mozilla/5.0',
+const DOWNLOAD_HEADERS: Record<string, string> = {
+  Referer: 'https://www.manhuagui.com/',
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
 }
 
-export async function executeManhuaguiRule(rule: ManhuaguiRule, fetch: Fetcher): Promise<string[]> {
-  const comicUrl = toDesktopComicUrl(rule.url)
+export async function executeManhuaguiRule(rule: ManhuaguiRule, fetch: Fetcher): Promise<RuleResult> {
+  const comicUrl = normalizeComicUrl(rule.url)
   const chapterUrls = await loadChapterUrls(comicUrl, fetch)
 
   const targets = rule.scope === 'latest-chapter'
@@ -17,23 +16,54 @@ export async function executeManhuaguiRule(rule: ManhuaguiRule, fetch: Fetcher):
     : chapterUrls
 
   const allImages = await Promise.all(targets.map((url) => loadChapterImages(url, fetch)))
-  return Array.from(new Set(allImages.flat()))
+  return {
+    imageUrls: Array.from(new Set(allImages.flat())),
+    downloadHeaders: DOWNLOAD_HEADERS,
+  }
 }
 
 async function loadChapterUrls(comicUrl: string, fetch: Fetcher): Promise<string[]> {
-  const res = await fetch(comicUrl, { headers: MANHUAGUI_HEADERS })
+  const res = await fetch(comicUrl, { headers: buildHeaders(comicUrl) })
   if (!res.ok) {
     throw new Error(`manhuagui rule: failed to load comic page ${comicUrl}: HTTP ${res.status}`)
   }
 
   const html = await res.text()
   const root = parse(html)
-  const links = root.querySelectorAll('#chapter-list-0 a, #chapterList a')
+
+  // 漫画页可能将章节列表压缩在 #__VIEWSTATE hidden input 中
+  let chapterRoot = root
+  const hiddenInput = root.querySelector('#__VIEWSTATE')
+  if (hiddenInput) {
+    const compressed = hiddenInput.getAttribute('value')
+    if (compressed) {
+      const decompressed = decompressFromBase64(compressed)
+      if (decompressed) {
+        chapterRoot = parse(decompressed)
+      }
+    }
+  }
+
+  const links = chapterRoot.querySelectorAll('.chapter-list a[href*="/comic/"]')
+
+  // 如果压缩数据中没找到，回退到原始页面的选择器
+  if (links.length === 0) {
+    const fallbackLinks = root.querySelectorAll('#chapter-list-0 a, .chapter a[href*="/comic/"]')
+    const chapterUrls = fallbackLinks
+      .map((link) => link.getAttribute('href'))
+      .filter((href): href is string => Boolean(href))
+      .map((href) => new URL(href, comicUrl).href)
+
+    if (chapterUrls.length === 0) {
+      throw new Error('manhuagui rule: no chapters found')
+    }
+    return chapterUrls
+  }
 
   const chapterUrls = links
     .map((link) => link.getAttribute('href'))
     .filter((href): href is string => Boolean(href))
-    .map((href) => new URL(href, DESKTOP_ROOT).href)
+    .map((href) => new URL(href, comicUrl).href)
 
   if (chapterUrls.length === 0) {
     throw new Error('manhuagui rule: no chapters found')
@@ -43,104 +73,142 @@ async function loadChapterUrls(comicUrl: string, fetch: Fetcher): Promise<string
 }
 
 async function loadChapterImages(chapterUrl: string, fetch: Fetcher): Promise<string[]> {
-  const res = await fetch(chapterUrl, { headers: MANHUAGUI_HEADERS })
+  const res = await fetch(chapterUrl, { headers: buildHeaders(chapterUrl) })
   if (!res.ok) {
     throw new Error(`manhuagui rule: failed to load chapter page ${chapterUrl}: HTTP ${res.status}`)
   }
 
   const html = await res.text()
-  const packed = extractPackedScript(html)
-  const data = decodePackedData(packed)
+  const data = decrypt(html)
 
   const path = typeof data.path === 'string' ? data.path : ''
   const files = Array.isArray(data.files) ? data.files.filter((value): value is string => typeof value === 'string') : []
-  const query = buildQuery(data.sl)
 
   if (files.length === 0) {
     throw new Error(`manhuagui rule: no image files found in ${chapterUrl}`)
   }
 
-  return files.map((file) => `${IMAGE_HOST}${path}${file}${query}`)
+  return files.map((file) => `${IMAGE_HOST}${path}${file}`)
 }
 
-function toDesktopComicUrl(url: string): string {
+function normalizeComicUrl(url: string): string {
   const parsed = new URL(url)
   parsed.protocol = 'https:'
-  parsed.hostname = 'www.manhuagui.com'
+  // 移动端域名重写为 www，确保获取到桌面版 HTML（包含 packed script）
+  if (parsed.hostname === 'm.manhuagui.com') {
+    parsed.hostname = 'www.manhuagui.com'
+  }
   return parsed.href
 }
 
-function extractPackedScript(html: string): string {
-  const match = html.match(/window\["\\x65\\x76\\x61\\x6c"\]\(function\(p,a,c,k,e,d\)\{[\s\S]*?\}\('(.*)',(\d+),(\d+),'([\s\S]*?)'\['\\x73\\x70\\x6c\\x69\\x63'\]\('\\x7c'\),0,\{\}\)\)/)
+function buildHeaders(targetUrl: string): Record<string, string> {
+  const origin = new URL(targetUrl).origin
+  return {
+    Referer: `${origin}/`,
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+  }
+}
+
+// ============================================================
+// 解密逻辑 — 参考 manhuagui-downloader 的 decrypt.rs
+// ============================================================
+
+interface DecryptResult {
+  path?: string
+  files?: unknown[]
+  sl?: Record<string, string>
+}
+
+/**
+ * 从章节页 HTML 中提取并解密图片数据。
+ * 流程：extractDecryptionData → createDict → createJs → JSON.parse
+ */
+function decrypt(html: string): DecryptResult {
+  const { payload, a, c, data } = extractDecryptionData(html)
+  const dict = createDict(a, c, data)
+  const js = createJs(payload, dict)
+  return extractJsonFromJs(js)
+}
+
+/**
+ * 提取 packed 脚本中的四个关键部分：
+ * function body, base(a), count(c), LZ 压缩的字典
+ */
+function extractDecryptionData(html: string): { payload: string; a: number; c: number; data: string[] } {
+  // 匹配 }('payload', a, c, 'compressed_dict'... 模式
+  const match = html.match(/\}\('([^']*)',(\d+),(\d+),'([A-Za-z0-9+/=]*)'\[/)
   if (!match) {
     throw new Error('manhuagui rule: packed chapter payload not found')
   }
 
-  const [, payload, base, count, dictionary] = match
-  return unpackPayload(payload, Number(base), Number(count), decompressDictionary(dictionary))
-}
+  const [, payload, aStr, cStr, compressedData] = match
 
-function unpackPayload(payload: string, base: number, count: number, dictionary: string[]): string {
-  let result = payload
-
-  for (let i = count - 1; i >= 0; i--) {
-    const key = encodeNumber(i, base)
-    const replacement = dictionary[i] || key
-    result = result.replace(new RegExp(`\\b${escapeRegExp(key)}\\b`, 'g'), replacement)
-  }
-
-  return result
-}
-
-function encodeNumber(value: number, base: number): string {
-  return (value < base ? '' : encodeNumber(Math.floor(value / base), base)) + digit(value % base)
-}
-
-function digit(value: number): string {
-  return value > 35
-    ? String.fromCharCode(value + 29)
-    : '0123456789abcdefghijklmnopqrstuvwxyz'[value]
-}
-
-function decompressDictionary(input: string): string[] {
-  const decompressed = decompressFromBase64(input)
+  const decompressed = decompressFromBase64(compressedData)
   if (decompressed == null) {
     throw new Error('manhuagui rule: failed to decompress chapter dictionary')
   }
-  return decompressed.split('|')
+
+  const data = decompressed.split('|')
+
+  return {
+    payload,
+    a: Number(aStr),
+    c: Number(cStr),
+    data,
+  }
 }
 
-function decodePackedData(script: string): { path?: string; files?: unknown[]; sl?: Record<string, string> } {
-  const match = script.match(/\{[\s\S]*\}/)
+/**
+ * 构建字典映射：编码后的 key → 字典中的值。
+ * 对应 downloader 的 create_dict。
+ */
+function createDict(a: number, c: number, data: string[]): Map<string, string> {
+  const dict = new Map<string, string>()
+
+  for (let i = c - 1; i >= 0; i--) {
+    const key = encodeKey(i, a)
+    const value = data[i] || key
+    dict.set(key, value)
+  }
+
+  return dict
+}
+
+/**
+ * 将编码后的 payload 中的 word token 替换为字典值。
+ * 对应 downloader 的 create_js：按 \b\w+\b 分割，逐 token 替换。
+ */
+function createJs(payload: string, dict: Map<string, string>): string {
+  return payload.replace(/\b\w+\b/g, (token) => dict.get(token) ?? token)
+}
+
+/**
+ * 从解密后的 JS 中提取 JSON 对象。
+ * 解密后的结果形如 SMH.imgData(...){...})，提取最外层 {...}。
+ */
+function extractJsonFromJs(js: string): DecryptResult {
+  const match = js.match(/\((\{.*\})\)/)
   if (!match) {
     throw new Error('manhuagui rule: decoded chapter object not found')
   }
-
-  const normalized = match[0]
-    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
-    .replace(/:\s*([A-Za-z_$][\w$]*)\b/g, ': "$1"')
-
-  return JSON.parse(normalized)
+  return JSON.parse(match[1])
 }
 
-function buildQuery(sl: unknown): string {
-  if (!sl || typeof sl !== 'object') {
-    return ''
-  }
-
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(sl)) {
-    if (typeof value === 'string' && value) {
-      params.set(key, value)
-    }
-  }
-
-  const query = params.toString()
-  return query ? `?${query}` : ''
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/**
+ * 将数字编码为指定进制的字符串。
+ * 对应 downloader 的 e(c, a) 函数。
+ */
+function encodeKey(value: number, base: number): string {
+  const prefix = value < base ? '' : encodeKey(Math.floor(value / base), base)
+  const remainder = value % base
+  const suffix = remainder > 35
+    ? String.fromCharCode(remainder + 29)
+    : '0123456789abcdefghijklmnopqrstuvwxyz'[remainder]
+  return prefix + suffix
 }
 
 const keyStrBase64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='

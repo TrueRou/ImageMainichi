@@ -1,10 +1,10 @@
-import type { JsonApiRule, Fetcher } from '../types.js'
+import type { JsonApiRule, Fetcher, RuleResult } from '../types.js'
 
 /**
  * 执行 JSON API 规则：请求 API → 用 JSONPath 提取图片 URL
  * 支持简单的 JSONPath 语法：$.data[*].url 或 $.items[*].image
  */
-export async function executeJsonApiRule(rule: JsonApiRule, fetch: Fetcher): Promise<string[]> {
+export async function executeJsonApiRule(rule: JsonApiRule, fetch: Fetcher): Promise<RuleResult> {
   const res = await fetch(rule.url, {
     headers: rule.headers ?? {},
   })
@@ -14,7 +14,7 @@ export async function executeJsonApiRule(rule: JsonApiRule, fetch: Fetcher): Pro
   }
 
   const json = await res.json()
-  return extractByPath(json, rule.imagePath)
+  return { imageUrls: extractByPath(json, rule.imagePath) }
 }
 
 /**
