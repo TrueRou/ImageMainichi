@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { downloadToManifest, formatRuleList, formatTestRuleResult, initTemplate, listRules, resolveWorkDir, testRule } from '@image-mainichi/node'
 
 async function main(): Promise<void> {
@@ -56,8 +54,8 @@ function runInit(args: string[]): void {
   console.log('Next steps:')
   console.log(`- cd ${targetDir}`)
   console.log('- edit rules/*.json')
-  console.log('- run imagemainichi rule list')
-  console.log('- run imagemainichi rule test <selector>')
+  console.log('- run image-mainichi rule list')
+  console.log('- run image-mainichi rule test <selector>')
 }
 
 function runRuleList(args: string[]): void {
@@ -174,9 +172,9 @@ function parseRuleTestArgs(args: string[]): {
 }
 
 function printHelp(): void {
-  console.log('imagemainichi init [dir] [--name <name>]')
-  console.log('imagemainichi rule list [--work-dir <path>]')
-  console.log('imagemainichi rule test <selector> [--work-dir <path>] [--limit <n>] [--json] [--list] [--download]')
+  console.log('image-mainichi init [dir] [--name <name>]')
+  console.log('image-mainichi rule list [--work-dir <path>]')
+  console.log('image-mainichi rule test <selector> [--work-dir <path>] [--limit <n>] [--json] [--list] [--download]')
 }
 
 main().catch((error) => {

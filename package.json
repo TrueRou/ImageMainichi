@@ -1,5 +1,6 @@
 {
   "name": "image-mainichi",
+  "version": "1.0.0",
   "private": true,
   "description": "Random image service with configurable data sources",
   "scripts": {

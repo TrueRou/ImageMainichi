@@ -39,9 +39,10 @@ export interface InitTemplateOptions {
   name?: string
 }
 
-const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = resolve(PACKAGE_DIR, '../../..')
-const TEMPLATE_DIR = resolve(REPO_ROOT, 'template')
+function getTemplateDir(): string {
+  const packageDir = dirname(fileURLToPath(import.meta.url))
+  return resolve(packageDir, '..', 'template')
+}
 
 export interface DownloadOptions {
   workDir: string
@@ -327,7 +328,7 @@ export function initTemplate(options: InitTemplateOptions): string {
   const baseDir = options.baseDir ?? process.cwd()
   const targetDir = resolveWorkDir(options.targetDir, baseDir)
 
-  cpSync(TEMPLATE_DIR, targetDir, { recursive: true })
+  cpSync(getTemplateDir(), targetDir, { recursive: true })
 
   if (options.name) {
     const manifestPath = join(targetDir, 'manifest.json')

@@ -1,21 +1,25 @@
 {
-  "name": "@image-mainichi/cli",
+  "name": "image-mainichi",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "Random image API service CLI — init data sources, test rules, download images",
   "bin": {
-    "imagemainichi": "dist/index.js"
+    "image-mainichi": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "template"
+  ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsup"
   },
   "dependencies": {
-    "@image-mainichi/node": "workspace:*"
+    "node-html-parser": "^6.1.0"
   },
   "devDependencies": {
+    "@image-mainichi/node": "workspace:*",
     "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.7.0"
   }
 }

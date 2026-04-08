@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
   "scripts": {
-    "build": "tsc",
-    "test-rule": "node dist/test-rule.js"
+    "build": "tsup"
   },
   "dependencies": {
     "@actions/core": "^1.11.0",
@@ -16,6 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.7.0"
   }
 }
