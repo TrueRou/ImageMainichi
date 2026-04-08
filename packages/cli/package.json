@@ -1,6 +1,6 @@
 {
   "name": "image-mainichi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Random image API service CLI — init data sources, test rules, download images",
   "bin": {
